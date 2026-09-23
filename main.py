@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import requests
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
@@ -37,6 +38,45 @@ async def search_wiki(query: str) -> str:
     return f"{titles[0]}\n\n{descriptions[0]}\n\n{links[0]}"
 
 
+async def search_git(query: str) -> str:
+    try:
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://api.github.com/search/repositories",
+            params={"q": query, "per_page": 5},
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+    except requests.exceptions.Timeout:
+        return "Не удалось дождаться ответа GitHub. Попробуй позже."
+
+    except requests.exceptions.HTTPError:
+        return f"GitHub не смог выполнить поиск. Код: {response.status_code}."
+
+    except requests.exceptions.RequestException:
+        return "Не удалось связаться с GitHub. Попробуй позже."
+
+    data = response.json()
+    repositories = data["items"]
+    messages = []  # Здесь будем накапливать строки
+
+    for repo in repositories:
+        text = (
+            f"Название: {repo['full_name']}\n"
+            f"Описание: {repo['description'] or 'Нет описания'}\n"
+            f"Звёзды: {repo['stargazers_count']}\n"
+            f"Язык: {repo['language'] or 'Не определён'}\n"
+            f"Ссылка: {repo['html_url']}"
+        )
+
+        messages.append(text)
+
+    return "\n\n".join(messages)
+
+
+
 @dp.message(Command('start'))
 async def handle_start(message: Message) -> None:
     await message.answer(
@@ -52,8 +92,12 @@ async def handle_search(message: Message, command: CommandObject) -> None:
         await message.answer("Укажи запрос, например: /search asyncio")
         return
 
-    result = await search_wiki(query)
-    await message.answer(result)
+    # result = await search_wiki(query)
+    result = await asyncio.gather(
+        search_wiki(query),
+        search_git(query)
+    )
+    await message.answer("\n\n".join(result))
 
 
 async def main():
