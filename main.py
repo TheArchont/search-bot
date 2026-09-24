@@ -75,6 +75,32 @@ async def search_git(query: str) -> str:
 
     return "\n\n".join(messages)
 
+async def search_stack_overflow(query: str) -> str:
+    try:
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://api.stackexchange.com/2.3/search/advanced",
+            params={
+                "site": "stackoverflow",
+                "q": query,
+                "sort": "relevance",
+                "order": "desc",
+                "pagesize": 5,
+                "filter": "!-.GhDIMmjQBUYO5FtPM-qKIu"
+            },
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+    except requests.exceptions.Timeout:
+        return ""
+
+    except requests.exceptions.HTTPError:
+        return f""
+
+    except requests.exceptions.RequestException:
+        return ""
 
 
 @dp.message(Command('start'))
