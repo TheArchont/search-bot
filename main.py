@@ -21,7 +21,7 @@ async def search_wiki(query: str) -> str:
         "format": "json",
     }
     headers = {
-        "User-Agent": "MyLearningBot/1.0 (contact: your_email@example.com)"
+        "User-Agent"
     }
 
     async with aiohttp.ClientSession() as session:
@@ -94,14 +94,32 @@ async def search_stack_overflow(query: str) -> str:
         response.raise_for_status()
 
     except requests.exceptions.Timeout:
-        return ""
+        return "Не удалось дождаться ответа Stack Overflow. Попробуй позже."
+
+    except requests.exceptions.ConnectionError:
+        return "Не удалось установить соединение со Stack Overflow. Попробуй позже."
 
     except requests.exceptions.HTTPError:
-        return f""
+        return f"Stack Overflow не смог выполнить поиск. Код: {response.status_code}."
 
     except requests.exceptions.RequestException:
-        return ""
+        return "Произошла ошибка запроса к Stack Overflow. Попробуй позже."
 
+    data = response.json()
+    discussions = data["items"]
+    messages = []
+
+    for discussion in discussions:
+        text = (
+            f"Заголовок: {discussion["title"] or "Нет заголовка"} \n"
+            f"Ссылка: {discussion["link"] or 'Нет ссылки'}\n"
+            f"Кол-во ответов: {discussion["answer_count"]}\n"
+            f"Рейтинг: {discussion['score']}\n"
+            f"Принятый ответ: {'Есть' if 'accepted_answer_id' in discussion else 'Нет'}\n"
+        )
+        messages.append(text)
+
+    return "\n\n".join(messages)
 
 @dp.message(Command('start'))
 async def handle_start(message: Message) -> None:
@@ -121,7 +139,8 @@ async def handle_search(message: Message, command: CommandObject) -> None:
     # result = await search_wiki(query)
     result = await asyncio.gather(
         search_wiki(query),
-        search_git(query)
+        search_git(query),
+        search_stack_overflow(query),
     )
     await message.answer("\n\n".join(result))
 
