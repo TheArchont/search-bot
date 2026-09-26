@@ -21,22 +21,74 @@ async def search_wiki(query: str) -> str:
         "format": "json",
     }
     headers = {
-        "User-Agent"
+        "User-Agent": "MyLearningBot/1.0"
     }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params, headers=headers) as response:
+                data = await response.json()
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params, headers=headers) as response:
-            data = await response.json()
+        titles = data[1]
+        descriptions = data[2]
+        links = data[3]
 
-    titles = data[1]
-    descriptions = data[2]
-    links = data[3]
+        if not titles:
+            return f"По запросу '{query}' ничего не найдено."
 
-    if not titles:
-        return f"По запросу '{query}' ничего не найдено."
+        return f"{titles[0]}\n\n{descriptions[0]}\n\n{links[0]}"
+    except Exception as error:
+        print(f"Ошибка Wikipedia: {type(error).__name__}: {error}")
+        return "Не удалось выполнить поиск в Wikipedia."
 
-    return f"{titles[0]}\n\n{descriptions[0]}\n\n{links[0]}"
+async def search_wiki1(query: str) -> str:
+    S = requests.Session()
+    S.headers.update({
+        "User-Agent": "SearchBot/1.0 (contact: YOUR_EMAIL)"
+    })
 
+    URL = "https://en.wikipedia.org/w/api.php"
+
+    PARAMS = {
+        "action": "query",
+        "format": "json",
+        "generator": "search",
+        "gsrsearch": query ,
+        "prop": "info|extracts",
+        "exintro": "1",
+        "inprop": "url",
+        "explaintext": "1",
+        "exchars": 300,
+        "gsrlimit": 1,
+        "exlimit": 1,
+    }
+    try:
+        R = await asyncio.to_thread(
+            S.get,
+            url=URL,
+            params=PARAMS,
+            timeout=15,
+        )
+
+        R.raise_for_status()
+
+        DATA = R.json()
+
+    except requests.exceptions.RequestException as error:
+        print(f"Ошибка Wikipedia: {type(error).__name__}: {error}")
+        return "Неудачный поиск в Wiki, попробуйте чуть позже снова"
+
+    answers = DATA["query"]["pages"]
+    messages = []
+
+    for answer in answers.values():
+        text =(
+            f"{answer['title']}\n"
+            f"{answer['extract']}\n"
+            f"Ссылка на статью: {answer['fullurl']}"
+        )
+        messages.append(text)
+
+    return "".join(messages)
 
 async def search_git(query: str) -> str:
     try:
@@ -138,7 +190,7 @@ async def handle_search(message: Message, command: CommandObject) -> None:
 
     # result = await search_wiki(query)
     result = await asyncio.gather(
-        search_wiki(query),
+        search_wiki1(query),
         search_git(query),
         search_stack_overflow(query),
     )
