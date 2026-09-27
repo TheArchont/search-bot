@@ -11,34 +11,35 @@ BOT_TOKEN = "8898587484:AAFQFYWF9h_bVhQFFSv6_lM7qkBpbZCcy_I"
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+semaphore = asyncio.Semaphore(5) # ограничиваю общее количество HTTP-запросов через общей для всех сервисов semaphore
 
-async def search_wiki(query: str) -> str:
-    url = "https://ru.wikipedia.org/w/api.php"
-    params = {
-        "action": "opensearch",
-        "search": query,
-        "limit": 1,
-        "format": "json",
-    }
-    headers = {
-        "User-Agent": "MyLearningBot/1.0"
-    }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=headers) as response:
-                data = await response.json()
-
-        titles = data[1]
-        descriptions = data[2]
-        links = data[3]
-
-        if not titles:
-            return f"По запросу '{query}' ничего не найдено."
-
-        return f"{titles[0]}\n\n{descriptions[0]}\n\n{links[0]}"
-    except Exception as error:
-        print(f"Ошибка Wikipedia: {type(error).__name__}: {error}")
-        return "Не удалось выполнить поиск в Wikipedia."
+# async def search_wiki(query: str) -> str:
+#     url = "https://ru.wikipedia.org/w/api.php"
+#     params = {
+#         "action": "opensearch",
+#         "search": query,
+#         "limit": 1,
+#         "format": "json",
+#     }
+#     headers = {
+#         "User-Agent": "MyLearningBot/1.0"
+#     }
+#     try:
+#         async with aiohttp.ClientSession() as session:
+#             async with session.get(url, params=params, headers=headers) as response:
+#                 data = await response.json()
+#
+#         titles = data[1]
+#         descriptions = data[2]
+#         links = data[3]
+#
+#         if not titles:
+#             return f"По запросу '{query}' ничего не найдено."
+#
+#         return f"{titles[0]}\n\n{descriptions[0]}\n\n{links[0]}"
+#     except Exception as error:
+#         print(f"Ошибка Wikipedia: {type(error).__name__}: {error}")
+#         return "Не удалось выполнить поиск в Wikipedia."
 
 async def search_wiki1(query: str) -> str:
     S = requests.Session()
@@ -62,12 +63,13 @@ async def search_wiki1(query: str) -> str:
         "exlimit": 1,
     }
     try:
-        R = await asyncio.to_thread(
-            S.get,
-            url=URL,
-            params=PARAMS,
-            timeout=15,
-        )
+        async with semaphore: # захватывает слот 1/5 слотов, после выполнения операции - освобождает
+            R = await asyncio.to_thread(
+                S.get,
+                url=URL,
+                params=PARAMS,
+                timeout=15,
+            )
 
         R.raise_for_status()
 
@@ -91,24 +93,25 @@ async def search_wiki1(query: str) -> str:
     return "".join(messages)
 
 async def search_git(query: str) -> str:
-    try:
-        response = await asyncio.to_thread(
-            requests.get,
-            "https://api.github.com/search/repositories",
-            params={"q": query, "per_page": 5},
-            timeout=15,
-        )
+    async with semaphore:
+        try:
+            response = await asyncio.to_thread(
+                requests.get,
+                "https://api.github.com/search/repositories",
+                params={"q": query, "per_page": 5},
+                timeout=15,
+            )
 
-        response.raise_for_status()
+            response.raise_for_status()
 
-    except requests.exceptions.Timeout:
-        return "Не удалось дождаться ответа GitHub. Попробуй позже."
+        except requests.exceptions.Timeout:
+            return "Не удалось дождаться ответа GitHub. Попробуй позже."
 
-    except requests.exceptions.HTTPError:
-        return f"GitHub не смог выполнить поиск. Код: {response.status_code}."
+        except requests.exceptions.HTTPError:
+            return f"GitHub не смог выполнить поиск. Код: {response.status_code}."
 
-    except requests.exceptions.RequestException:
-        return "Не удалось связаться с GitHub. Попробуй позже."
+        except requests.exceptions.RequestException:
+            return "Не удалось связаться с GitHub. Попробуй позже."
 
     data = response.json()
     repositories = data["items"]
@@ -128,34 +131,34 @@ async def search_git(query: str) -> str:
     return "\n\n".join(messages)
 
 async def search_stack_overflow(query: str) -> str:
-    try:
-        response = await asyncio.to_thread(
-            requests.get,
-            "https://api.stackexchange.com/2.3/search/advanced",
-            params={
-                "site": "stackoverflow",
-                "q": query,
-                "sort": "relevance",
-                "order": "desc",
-                "pagesize": 5,
-                "filter": "!-.GhDIMmjQBUYO5FtPM-qKIu"
-            },
-            timeout=15,
-        )
+    async with semaphore:
+        try:
+            response = await asyncio.to_thread(
+                requests.get,
+                "https://api.stackexchange.com/2.3/search/advanced",
+                params={
+                    "site": "stackoverflow",
+                    "q": query,
+                    "sort": "relevance",
+                    "order": "desc",
+                    "pagesize": 5,
+                    "filter": "!-.GhDIMmjQBUYO5FtPM-qKIu"
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
 
-        response.raise_for_status()
+        except requests.exceptions.Timeout:
+            return "Не удалось дождаться ответа Stack Overflow. Попробуй позже."
 
-    except requests.exceptions.Timeout:
-        return "Не удалось дождаться ответа Stack Overflow. Попробуй позже."
+        except requests.exceptions.ConnectionError:
+            return "Не удалось установить соединение со Stack Overflow. Попробуй позже."
 
-    except requests.exceptions.ConnectionError:
-        return "Не удалось установить соединение со Stack Overflow. Попробуй позже."
+        except requests.exceptions.HTTPError:
+            return f"Stack Overflow не смог выполнить поиск. Код: {response.status_code}."
 
-    except requests.exceptions.HTTPError:
-        return f"Stack Overflow не смог выполнить поиск. Код: {response.status_code}."
-
-    except requests.exceptions.RequestException:
-        return "Произошла ошибка запроса к Stack Overflow. Попробуй позже."
+        except requests.exceptions.RequestException:
+            return "Произошла ошибка запроса к Stack Overflow. Попробуй позже."
 
     data = response.json()
     discussions = data["items"]
