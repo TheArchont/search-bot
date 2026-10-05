@@ -12,35 +12,8 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 semaphore = asyncio.Semaphore(5) # ограничиваю общее количество HTTP-запросов через общей для всех сервисов semaphore
-queue = asyncio.Queue(maxsize=10)  # потолок на размер кол-во задач в очереди
-
-# async def search_wiki(query: str) -> str:
-#     url = "https://ru.wikipedia.org/w/api.php"
-#     params = {
-#         "action": "opensearch",
-#         "search": query,
-#         "limit": 1,
-#         "format": "json",
-#     }
-#     headers = {
-#         "User-Agent": "MyLearningBot/1.0"
-#     }
-#     try:
-#         async with aiohttp.ClientSession() as session:
-#             async with session.get(url, params=params, headers=headers) as response:
-#                 data = await response.json()
-#
-#         titles = data[1]
-#         descriptions = data[2]
-#         links = data[3]
-#
-#         if not titles:
-#             return f"По запросу '{query}' ничего не найдено."
-#
-#         return f"{titles[0]}\n\n{descriptions[0]}\n\n{links[0]}"
-#     except Exception as error:
-#         print(f"Ошибка Wikipedia: {type(error).__name__}: {error}")
-#         return "Не удалось выполнить поиск в Wikipedia."
+queue = asyncio.Queue(maxsize=10) # потолок на размер кол-во задач в очереди: 1 задача - 1 поисковой запрос
+NUM_WORKERS = 5 # огр. на кол-во максимально выполняющихся потоков
 
 async def search_wiki1(query: str) -> str:
     S = requests.Session()
@@ -188,21 +161,31 @@ async def handle_start(message: Message) -> None:
 
 @dp.message(Command('search'))
 async def handle_search(message: Message, command: CommandObject) -> None:
-    query = command.args
+    query = command.args # запрос
     if not query:
         await message.answer("Укажи запрос, например: /search asyncio")
         return
+    await queue.put((message, query)) # обьект message содержит user.id
 
-    # result = await search_wiki(query)
-    result = await asyncio.gather(
-        search_wiki1(query),
-        search_git(query),
-        search_stack_overflow(query),
-    )
-    await message.answer("\n\n".join(result))
 
+async def worker(queue):
+    while True:
+        message, query = await queue.get()
+        try:
+            result = await asyncio.gather(
+                search_wiki1(query),
+                search_git(query),
+                search_stack_overflow(query),
+            )
+            await message.answer("\n\n".join(result))
+        finally:
+            queue.task_done()
 
 async def main():
+    workers = [
+        asyncio.create_task(worker(queue))
+    for i in range(4)
+    ]
     await dp.start_polling(bot)
 
 
