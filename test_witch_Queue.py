@@ -176,6 +176,7 @@ async def worker(queue):
                 search_wiki1(query),
                 search_git(query),
                 search_stack_overflow(query),
+                return_exceptions=True,
             )
             await message.answer("\n\n".join(result))
         finally:
