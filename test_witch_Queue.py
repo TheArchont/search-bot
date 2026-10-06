@@ -1,5 +1,4 @@
 import asyncio
-import aiohttp
 import requests
 
 from aiogram import Bot, Dispatcher
@@ -178,7 +177,10 @@ async def worker(queue):
                 search_stack_overflow(query),
                 return_exceptions=True,
             )
-            await message.answer("\n\n".join(result))
+            await message.answer(
+                "\n\n".join([i if isinstance(i, str) else "ошибка на стороне сервиса" for i in result])
+            )
+
         finally:
             queue.task_done()
 
